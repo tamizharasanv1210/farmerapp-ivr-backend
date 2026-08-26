@@ -162,51 +162,39 @@ app.all("/prompt/slot", async (req, res) => {
   await speakText(res, prompt || TEXTS[session.lang].noSlots, session.lang);
 });
 app.all("/gather/role", async (req, res) => {
-  res.set("Content-Type", "application/json");
-  res.json({
-    gather_prompt: {
-      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/role",
-    },
+  const payload = JSON.stringify({
+    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/role" },
     max_input_digits: 1,
-    finish_on_key: "",
-    input_timeout: 7,
   });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(payload);
 });
 
 app.all("/gather/crop", async (req, res) => {
-  res.set("Content-Type", "application/json");
-  res.json({
-    gather_prompt: {
-      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/crop",
-    },
+  const payload = JSON.stringify({
+    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/crop" },
     max_input_digits: 1,
-    finish_on_key: "",
-    input_timeout: 7,
   });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(payload);
 });
 
 app.all("/gather/date", async (req, res) => {
-  res.set("Content-Type", "application/json");
-  res.json({
-    gather_prompt: {
-      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/date",
-    },
+  const payload = JSON.stringify({
+    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/date" },
     max_input_digits: 1,
-    finish_on_key: "",
-    input_timeout: 7,
   });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(payload);
 });
 
 app.all("/gather/slot", async (req, res) => {
-  res.set("Content-Type", "application/json");
-  res.json({
-    gather_prompt: {
-      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/slot",
-    },
+  const payload = JSON.stringify({
+    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/slot" },
     max_input_digits: 1,
-    finish_on_key: "",
-    input_timeout: 7,
   });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(payload);
 });
 
 app.all("/prompt/confirm", async (req, res) => {
