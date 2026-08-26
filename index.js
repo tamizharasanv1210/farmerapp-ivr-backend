@@ -13,6 +13,13 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log("  query:", JSON.stringify(req.query));
+  console.log("  body:", JSON.stringify(req.body));
+  next();
+});
+
 const EXOTEL_SID = process.env.EXOTEL_SID;
 const EXOTEL_API_KEY = process.env.EXOTEL_API_KEY;
 const EXOTEL_API_TOKEN = process.env.EXOTEL_API_TOKEN;
