@@ -161,6 +161,53 @@ app.all("/prompt/slot", async (req, res) => {
   const prompt = slots.map((s) => `${s.id}: ${s.label}`).join(", ");
   await speakText(res, prompt || TEXTS[session.lang].noSlots, session.lang);
 });
+app.all("/gather/role", async (req, res) => {
+  res.set("Content-Type", "application/json");
+  res.json({
+    gather_prompt: {
+      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/role",
+    },
+    max_input_digits: 1,
+    finish_on_key: "",
+    input_timeout: 7,
+  });
+});
+
+app.all("/gather/crop", async (req, res) => {
+  res.set("Content-Type", "application/json");
+  res.json({
+    gather_prompt: {
+      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/crop",
+    },
+    max_input_digits: 1,
+    finish_on_key: "",
+    input_timeout: 7,
+  });
+});
+
+app.all("/gather/date", async (req, res) => {
+  res.set("Content-Type", "application/json");
+  res.json({
+    gather_prompt: {
+      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/date",
+    },
+    max_input_digits: 1,
+    finish_on_key: "",
+    input_timeout: 7,
+  });
+});
+
+app.all("/gather/slot", async (req, res) => {
+  res.set("Content-Type", "application/json");
+  res.json({
+    gather_prompt: {
+      audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/slot",
+    },
+    max_input_digits: 1,
+    finish_on_key: "",
+    input_timeout: 7,
+  });
+});
 
 app.all("/prompt/confirm", async (req, res) => {
   const { callSid, callerNumber } = readParams(req);
