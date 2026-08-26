@@ -1,5 +1,6 @@
 const express = require("express");
 const admin = require("firebase-admin");
+const googleTTS = require("google-tts-api");
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
 
@@ -12,11 +13,10 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// --- Exotel SMS credentials (set these in Render Environment tab) ---
 const EXOTEL_SID = process.env.EXOTEL_SID;
 const EXOTEL_API_KEY = process.env.EXOTEL_API_KEY;
 const EXOTEL_API_TOKEN = process.env.EXOTEL_API_TOKEN;
-const EXOTEL_SENDER = process.env.EXOTEL_SENDER; // your ExoPhone / Sender ID
+const EXOTEL_SENDER = process.env.EXOTEL_SENDER;
 const EXOTEL_SUBDOMAIN = process.env.EXOTEL_SUBDOMAIN || "@api.exotel.com";
 
 async function sendExotelSMS(toNumber, body) {
@@ -32,9 +32,6 @@ async function sendExotelSMS(toNumber, body) {
   params.append("From", EXOTEL_SENDER);
   params.append("To", toNumber);
   params.append("Body", body);
-  // NOTE: If your account requires DLT (mandatory for India), also add:
-  // params.append("DltEntityId", "your_entity_id");
-  // params.append("DltTemplateId", "your_template_id");
 
   try {
     const res = await fetch(url, {
@@ -56,12 +53,49 @@ app.get("/", (req, res) => {
   res.send("FarmerApp IVR backend is running");
 });
 
+app.all("/speak-token", async (req, res) => {
+  try {
+    const callerNumber =
+      req.query.From || req.body.From ||
+      req.query.CallFrom || req.body.CallFrom || "unknown";
+
+    let textToSpeak = "Sorry, we could not find your booking. Please try again.";
+
+    const snapshot = await db
+      .collection("bookings")
+      .where("phone", "==", callerNumber)
+      .orderBy("createdAt", "desc")
+      .limit(1)
+      .get();
+
+    if (!snapshot.empty) {
+      const data = snapshot.docs[0].data();
+      textToSpeak = `Your token number is ${data.token}. Thank you.`;
+    }
+
+    const ttsUrl = googleTTS.getAudioUrl(textToSpeak, {
+      lang: "en",
+      slow: false,
+      host: "https://translate.google.com",
+    });
+
+    const audioRes = await fetch(ttsUrl);
+    const arrayBuffer = await audioRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    res.set("Content-Type", "audio/mpeg");
+    res.send(buffer);
+  } catch (err) {
+    console.error("Error in speak-token:", err);
+    res.status(500).send("Error generating audio");
+  }
+});
+
 app.all("/handleIVR", async (req, res) => {
   try {
     let digits =
       req.query.digits || req.body.digits ||
       req.query.Digits || req.body.Digits;
-    // Exotel sometimes sends this JSON-quoted (e.g. "1" instead of 1) — strip quotes
     if (typeof digits === "string") {
       digits = digits.replace(/^"+|"+$/g, "");
     }
@@ -72,7 +106,6 @@ app.all("/handleIVR", async (req, res) => {
     console.log("Call from:", callerNumber, "Digits pressed:", digits);
 
     if (digits === "1") {
-      // Generate next token number using a counter document (atomic transaction)
       const counterRef = db.collection("meta").doc("tokenCounter");
       const tokenNumber = await db.runTransaction(async (t) => {
         const doc = await t.get(counterRef);
@@ -92,12 +125,6 @@ app.all("/handleIVR", async (req, res) => {
 
       console.log("Booking created for", callerNumber, "Token:", tokenNumber);
 
-      // Send SMS confirmation with the token number
-      await sendExotelSMS(
-        callerNumber,
-        `Your booking is confirmed. Your token number is ${tokenNumber}.`
-      );
-
       res.status(200).send("OK");
     } else if (digits === "2") {
       const snapshot = await db
@@ -108,14 +135,7 @@ app.all("/handleIVR", async (req, res) => {
         .get();
 
       if (!snapshot.empty) {
-        const data = snapshot.docs[0].data();
-        console.log("Status found:", data);
-        await sendExotelSMS(
-          callerNumber,
-          `Your latest token number is ${data.token}, status: ${data.status}.`
-        );
-      } else {
-        await sendExotelSMS(callerNumber, "No booking found for your number.");
+        console.log("Status found:", snapshot.docs[0].data());
       }
 
       res.status(200).send("OK");
