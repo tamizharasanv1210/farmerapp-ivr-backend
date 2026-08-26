@@ -24,7 +24,9 @@ async function sendExotelSMS(toNumber, body) {
     console.log("Exotel SMS credentials not set, skipping SMS send");
     return;
   }
-  const url = `https://${EXOTEL_API_KEY}:${EXOTEL_API_TOKEN}${EXOTEL_SUBDOMAIN}/v1/Accounts/${EXOTEL_SID}/Sms/send`;
+  const url = `https://${EXOTEL_SUBDOMAIN.replace(/^@/, "")}/v1/Accounts/${EXOTEL_SID}/Sms/send`;
+  const authHeader =
+    "Basic " + Buffer.from(`${EXOTEL_API_KEY}:${EXOTEL_API_TOKEN}`).toString("base64");
 
   const params = new URLSearchParams();
   params.append("From", EXOTEL_SENDER);
@@ -35,7 +37,14 @@ async function sendExotelSMS(toNumber, body) {
   // params.append("DltTemplateId", "your_template_id");
 
   try {
-    const res = await fetch(url, { method: "POST", body: params });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params,
+    });
     const text = await res.text();
     console.log("SMS send response:", res.status, text);
   } catch (err) {
