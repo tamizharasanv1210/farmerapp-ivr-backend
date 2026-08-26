@@ -49,9 +49,13 @@ app.get("/", (req, res) => {
 
 app.all("/handleIVR", async (req, res) => {
   try {
-    const digits =
+    let digits =
       req.query.digits || req.body.digits ||
       req.query.Digits || req.body.Digits;
+    // Exotel sometimes sends this JSON-quoted (e.g. "1" instead of 1) — strip quotes
+    if (typeof digits === "string") {
+      digits = digits.replace(/^"+|"+$/g, "");
+    }
     const callerNumber =
       req.query.From || req.body.From ||
       req.query.CallFrom || req.body.CallFrom || "unknown";
