@@ -279,18 +279,17 @@ app.all("/save/role", async (req, res) => {
   const farmerDoc = farmerSnap.docs[0];
   const farmerData = farmerDoc.data();
 
-  // Find the procurement centre for this farmer's district
-  const centreSnap = await db
-    .collection("centres")
-    .where("district", "==", farmerData.district)
-    .limit(1)
-    .get();
+  // Find the procurement centre for this farmer's district (case-insensitive,
+  // since farmers.district can be stored differently-cased than centres.district)
+  const allCentresSnap = await db.collection("centres").get();
+  const centreDoc = allCentresSnap.docs.find(
+    (d) => (d.data().district || "").toLowerCase() === (farmerData.district || "").toLowerCase()
+  );
 
-  if (centreSnap.empty) {
+  if (!centreDoc) {
     await ref.set({ step: "notRegistered", role }, { merge: true });
     return res.status(200).json({ status: "failure" });
   }
-  const centreDoc = centreSnap.docs[0];
   const centreData = centreDoc.data();
 
   await ref.set(
