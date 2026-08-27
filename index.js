@@ -145,7 +145,27 @@ async function getSession(callSid, callerNumber) {
 // e.g. https://yourapp.onrender.com/prompt/language
 // -----------------------------------------------------------------
 app.all("/prompt/language", async (req, res) => {
-  await speakText(res, TEXTS.ta.language, "ta"); // ask in Tamil first, caller picks
+  try {
+    const taUrl = googleTTS.getAudioUrl("தமிழுக்கு ஒன்று அழுத்தவும்.", {
+      lang: "ta",
+      slow: false,
+      host: "https://translate.google.com",
+    });
+    const enUrl = googleTTS.getAudioUrl("For English, press two.", {
+      lang: "en",
+      slow: false,
+      host: "https://translate.google.com",
+    });
+    const [taRes, enRes] = await Promise.all([fetch(taUrl), fetch(enUrl)]);
+    const taBuf = Buffer.from(await taRes.arrayBuffer());
+    const enBuf = Buffer.from(await enRes.arrayBuffer());
+    const combined = Buffer.concat([taBuf, enBuf]);
+    res.set("Content-Type", "audio/mpeg");
+    res.send(combined);
+  } catch (err) {
+    console.error("Error in /prompt/language:", err);
+    await speakText(res, TEXTS.ta.language, "ta"); // fallback
+  }
 });
 
 app.all("/prompt/role", async (req, res) => {
