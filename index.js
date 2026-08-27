@@ -87,15 +87,36 @@ const TEXTS = {
   },
 };
 
-const CROPS_BY_STATE = {
-  "Tamil Nadu": ["Paddy", "Sugarcane", "Groundnut", "Cotton"],
-};
+const STATE_ABBR = { "Tamil Nadu": "TN" };
 
-const SLOTS = [
-  { id: 1, label: "Morning (8AM-11AM)" },
-  { id: 2, label: "Afternoon (11AM-2PM)" },
-  { id: 3, label: "Evening (2PM-5PM)" },
-];
+// Turn "09:00-17:00" + slotsPerHour=4 into ["09:00 - 09:15", "09:15 - 09:30", ...]
+function generateAllSlots(operatingHours, slotsPerHour) {
+  const [start, end] = operatingHours.split("-").map((s) => s.trim());
+  const [startH, startM] = start.split(":").map(Number);
+  const [endH, endM] = end.split(":").map(Number);
+  const intervalMin = 60 / slotsPerHour;
+  const fmt = (totalMin) => {
+    const h = Math.floor(totalMin / 60).toString().padStart(2, "0");
+    const m = (totalMin % 60).toString().padStart(2, "0");
+    return `${h}:${m}`;
+  };
+  const slots = [];
+  let cur = startH * 60 + startM;
+  const endTotal = endH * 60 + endM;
+  while (cur + intervalMin <= endTotal) {
+    slots.push(`${fmt(cur)} - ${fmt(cur + intervalMin)}`);
+    cur += intervalMin;
+  }
+  return slots;
+}
+
+// Bucket a "HH:MM - HH:MM" slot into morning/afternoon/evening for a simple 3-option DTMF menu
+function bucketOf(slotStr) {
+  const hour = parseInt(slotStr.split(":")[0], 10);
+  if (hour < 12) return "Morning";
+  if (hour < 15) return "Afternoon";
+  return "Evening";
+}
 
 // -----------------------------------------------------------------
 // Audio helper — same pattern as your working /speak-token
@@ -150,16 +171,16 @@ app.all("/prompt/date", async (req, res) => {
 app.all("/prompt/slot", async (req, res) => {
   const { callSid, callerNumber } = readParams(req);
   const { session } = await getSession(callSid, callerNumber);
-  const slots = (session.availableSlotObjs || []);
-  const prompt = slots.map((s) => `${s.id}: ${s.label}`).join(", ");
+  const slots = session.availableSlotObjs || [];
+  const prompt = slots.map((s) => `${s.id}: ${s.bucket}`).join(", ");
   await speakText(res, prompt || TEXTS[session.lang].noSlots, session.lang);
 });
 
 app.all("/prompt/confirm", async (req, res) => {
   const { callSid, callerNumber } = readParams(req);
   const { session } = await getSession(callSid, callerNumber);
-  const text = session.token
-    ? `${TEXTS[session.lang].bookedPrefix} ${session.token}`
+  const text = session.tokenNumber
+    ? `${TEXTS[session.lang].bookedPrefix} ${session.tokenNumber}`
     : TEXTS[session.lang].invalid;
   await speakText(res, text, session.lang);
 });
@@ -194,8 +215,22 @@ app.all("/save/role", async (req, res) => {
     await ref.set({ step: "notRegistered", role }, { merge: true });
     return res.status(200).json({ status: "failure" }); // route Studio to a "not registered" Hangup path
   }
-  const farmerData = farmerSnap.docs[0].data();
-  const crops = CROPS_BY_STATE[farmerData.state] || [];
+  const farmerDoc = farmerSnap.docs[0];
+  const farmerData = farmerDoc.data();
+
+  // Find the procurement centre for this farmer's district
+  const centreSnap = await db
+    .collection("centres")
+    .where("district", "==", farmerData.district)
+    .limit(1)
+    .get();
+
+  if (centreSnap.empty) {
+    await ref.set({ step: "notRegistered", role }, { merge: true });
+    return res.status(200).json({ status: "failure" });
+  }
+  const centreDoc = centreSnap.docs[0];
+  const centreData = centreDoc.data();
 
   await ref.set(
     {
@@ -203,7 +238,13 @@ app.all("/save/role", async (req, res) => {
       role,
       state: farmerData.state,
       district: farmerData.district,
-      cropOptions: crops,
+      farmerId: farmerDoc.id,
+      farmerName: farmerData.name,
+      farmerPhone: farmerData.phone,
+      centreId: centreDoc.id,
+      centreName: centreData.centreName,
+      cropOptions: centreData.cropsAccepted || [],
+      counters: centreData.counters || [],
     },
     { merge: true }
   );
@@ -216,7 +257,20 @@ app.all("/save/crop", async (req, res) => {
   const idx = parseInt(digits, 10) - 1;
   const crop = (session.cropOptions || [])[idx];
   if (!crop) return res.status(200).json({ status: "failure" });
-  await ref.set({ step: "date", crop }, { merge: true });
+
+  const counter = (session.counters || []).find((c) => c.crop === crop);
+  if (!counter) return res.status(200).json({ status: "failure" });
+
+  await ref.set(
+    {
+      step: "date",
+      crop,
+      counterId: counter.counterId,
+      operatingHours: counter.operatingHours,
+      slotsPerHour: counter.slotsPerHour,
+    },
+    { merge: true }
+  );
   res.status(200).json({ status: "success" });
 });
 
@@ -230,16 +284,28 @@ app.all("/save/date", async (req, res) => {
   dateObj.setDate(dateObj.getDate() + daysAhead);
   const date = dateObj.toISOString().split("T")[0];
 
-  const availableSlotObjs = [];
-  for (const slot of SLOTS) {
-    const snap = await db
-      .collection("bookings")
-      .where("district", "==", session.district)
-      .where("date", "==", date)
-      .where("slotId", "==", slot.id)
-      .get();
-    if (snap.size < 15) availableSlotObjs.push(slot);
+  const allSlots = generateAllSlots(session.operatingHours, session.slotsPerHour);
+
+  const bookedSnap = await db
+    .collection("bookings")
+    .where("centreId", "==", session.centreId)
+    .where("counterId", "==", session.counterId)
+    .where("date", "==", date)
+    .get();
+  const bookedTimes = new Set(bookedSnap.docs.map((d) => d.data().timeSlot));
+
+  // Pick the first free slot in each of the 3 buckets (Morning/Afternoon/Evening)
+  const byBucket = {};
+  for (const slot of allSlots) {
+    if (bookedTimes.has(slot)) continue;
+    const b = bucketOf(slot);
+    if (!byBucket[b]) byBucket[b] = slot;
   }
+
+  const bucketOrder = ["Morning", "Afternoon", "Evening"];
+  const availableSlotObjs = bucketOrder
+    .filter((b) => byBucket[b])
+    .map((b, i) => ({ id: i + 1, bucket: b, time: byBucket[b] }));
 
   if (availableSlotObjs.length === 0) {
     await ref.set({ step: "noSlots", date }, { merge: true });
@@ -254,34 +320,45 @@ app.all("/save/slot", async (req, res) => {
   const { digits, callSid, callerNumber } = readParams(req);
   const { ref, session } = await getSession(callSid, callerNumber);
   const slotId = parseInt(digits, 10);
-  const slot = (session.availableSlotObjs || []).find((s) => s.id === slotId);
-  if (!slot) return res.status(200).json({ status: "failure" });
+  const chosen = (session.availableSlotObjs || []).find((s) => s.id === slotId);
+  if (!chosen) return res.status(200).json({ status: "failure" });
 
-  const counterRef = db.collection("meta").doc("tokenCounter");
-  const tokenNumber = await db.runTransaction(async (t) => {
-    const doc = await t.get(counterRef);
+  // Build a token like "TN-PAD-004"
+  const stateAbbr = STATE_ABBR[session.state] || "XX";
+  const cropAbbr = session.crop.slice(0, 3).toUpperCase();
+  const seqRef = db.collection("meta").doc(`tokenSeq_${stateAbbr}_${cropAbbr}`);
+  const seqNum = await db.runTransaction(async (t) => {
+    const doc = await t.get(seqRef);
     const current = doc.exists ? doc.data().value : 0;
     const next = current + 1;
-    t.set(counterRef, { value: next });
+    t.set(seqRef, { value: next });
     return next;
   });
+  const tokenNumber = `${stateAbbr}-${cropAbbr}-${String(seqNum).padStart(3, "0")}`;
 
-  await db.collection("bookings").add({
-    phone: callerNumber,
-    state: session.state,
-    district: session.district,
-    crop: session.crop,
-    date: session.date,
-    slotId: slot.id,
-    slotLabel: slot.label,
-    token: tokenNumber,
-    status: "pending",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  const bookingId = `bkg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await db
+    .collection("bookings")
+    .doc(bookingId)
+    .set({
+      id: bookingId,
+      centreId: session.centreId,
+      centreName: session.centreName,
+      counterId: session.counterId,
+      crop: session.crop,
+      date: session.date,
+      farmerId: session.farmerId,
+      farmerName: session.farmerName,
+      farmerPhone: session.farmerPhone,
+      status: "booked",
+      timeSlot: chosen.time,
+      tokenNumber,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-  await ref.set({ step: "confirm", token: tokenNumber }, { merge: true });
+  await ref.set({ step: "confirm", tokenNumber }, { merge: true });
 
-  const smsText = TEXTS[session.lang].smsBody(session.crop, session.date, slot.label, tokenNumber);
+  const smsText = TEXTS[session.lang].smsBody(session.crop, session.date, chosen.time, tokenNumber);
   await sendExotelSMS(callerNumber, smsText);
 
   res.status(200).json({ status: "success" });
