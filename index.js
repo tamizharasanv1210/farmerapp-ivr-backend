@@ -186,6 +186,47 @@ app.all("/prompt/confirm", async (req, res) => {
 });
 
 // -----------------------------------------------------------------
+// TEXT prompt routes — for Gather's "URL that returns plain text"
+// option (Exotel reads it with its own TTS, so language is dynamic)
+// -----------------------------------------------------------------
+app.all("/prompt-text/role", async (req, res) => {
+  const { callSid, callerNumber } = readParams(req);
+  const { session } = await getSession(callSid, callerNumber);
+  res.type("text/plain").send(TEXTS[session.lang || "ta"].role);
+});
+
+app.all("/prompt-text/crop", async (req, res) => {
+  const { callSid, callerNumber } = readParams(req);
+  const { session } = await getSession(callSid, callerNumber);
+  const crops = session.cropOptions || [];
+  const prompt = crops.map((c, i) => `${i + 1}: ${c}`).join(", ");
+  res.type("text/plain").send(prompt || TEXTS[session.lang || "ta"].invalid);
+});
+
+app.all("/prompt-text/date", async (req, res) => {
+  const { callSid, callerNumber } = readParams(req);
+  const { session } = await getSession(callSid, callerNumber);
+  res.type("text/plain").send(TEXTS[session.lang || "ta"].date);
+});
+
+app.all("/prompt-text/slot", async (req, res) => {
+  const { callSid, callerNumber } = readParams(req);
+  const { session } = await getSession(callSid, callerNumber);
+  const slots = session.availableSlotObjs || [];
+  const prompt = slots.map((s) => `${s.id}: ${s.bucket}`).join(", ");
+  res.type("text/plain").send(prompt || TEXTS[session.lang || "ta"].noSlots);
+});
+
+app.all("/prompt-text/confirm", async (req, res) => {
+  const { callSid, callerNumber } = readParams(req);
+  const { session } = await getSession(callSid, callerNumber);
+  const text = session.tokenNumber
+    ? `${TEXTS[session.lang || "ta"].bookedPrefix} ${session.tokenNumber}`
+    : TEXTS[session.lang || "ta"].invalid;
+  res.type("text/plain").send(text);
+});
+
+// -----------------------------------------------------------------
 // SAVE routes — point each Passthru applet's URL here, one per step
 // e.g. https://yourapp.onrender.com/save/language
 // -----------------------------------------------------------------
