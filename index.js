@@ -13,13 +13,6 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
-  console.log("  query:", JSON.stringify(req.query));
-  console.log("  body:", JSON.stringify(req.body));
-  next();
-});
-
 const EXOTEL_SID = process.env.EXOTEL_SID;
 const EXOTEL_API_KEY = process.env.EXOTEL_API_KEY;
 const EXOTEL_API_TOKEN = process.env.EXOTEL_API_TOKEN;
@@ -161,41 +154,6 @@ app.all("/prompt/slot", async (req, res) => {
   const prompt = slots.map((s) => `${s.id}: ${s.label}`).join(", ");
   await speakText(res, prompt || TEXTS[session.lang].noSlots, session.lang);
 });
-app.all("/gather/role", async (req, res) => {
-  const payload = JSON.stringify({
-    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/role" },
-    max_input_digits: 1,
-  });
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(payload);
-});
-
-app.all("/gather/crop", async (req, res) => {
-  const payload = JSON.stringify({
-    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/crop" },
-    max_input_digits: 1,
-  });
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(payload);
-});
-
-app.all("/gather/date", async (req, res) => {
-  const payload = JSON.stringify({
-    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/date" },
-    max_input_digits: 1,
-  });
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(payload);
-});
-
-app.all("/gather/slot", async (req, res) => {
-  const payload = JSON.stringify({
-    gather_prompt: { audio_url: "https://farmerapp-ivr-backend.onrender.com/prompt/slot" },
-    max_input_digits: 1,
-  });
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(payload);
-});
 
 app.all("/prompt/confirm", async (req, res) => {
   const { callSid, callerNumber } = readParams(req);
@@ -223,12 +181,20 @@ app.all("/save/role", async (req, res) => {
   const { ref, session } = await getSession(callSid, callerNumber);
   const role = digits === "1" ? "farmer" : "officer";
 
-  const farmerDoc = await db.collection("farmers").doc(callerNumber).get();
-  if (!farmerDoc.exists) {
+  // Normalize: strip leading 0 / +91, keep last 10 digits
+  const normalizedPhone = callerNumber.replace(/\D/g, "").slice(-10);
+
+  const farmerSnap = await db
+    .collection("farmers")
+    .where("phone", "==", normalizedPhone)
+    .limit(1)
+    .get();
+
+  if (farmerSnap.empty) {
     await ref.set({ step: "notRegistered", role }, { merge: true });
     return res.status(200).json({ status: "failure" }); // route Studio to a "not registered" Hangup path
   }
-  const farmerData = farmerDoc.data();
+  const farmerData = farmerSnap.docs[0].data();
   const crops = CROPS_BY_STATE[farmerData.state] || [];
 
   await ref.set(
