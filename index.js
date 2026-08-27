@@ -430,7 +430,6 @@ app.all("/save/slot", async (req, res) => {
 // -----------------------------------------------------------------
 app.get("/", (req, res) => {
   res.send("FarmerApp IVR backend is running");
-});
     res.send("Centres seeded successfully!");
   } catch (err) {
     console.error("Seed error:", err);
