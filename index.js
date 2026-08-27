@@ -432,6 +432,26 @@ app.get("/", (req, res) => {
   res.send("FarmerApp IVR backend is running");
 });
 
+app.get("/seed-centres", async (req, res) => {
+  try {
+    await db.collection("centres").doc("centre_tn_thanjavur").set({
+      district: "Thanjavur",
+      centreName: "Thanjavur Procurement Centre",
+      cropsAccepted: ["Paddy", "Sugarcane", "Groundnut", "Cotton"],
+      counters: [
+        { counterId: "c1", crop: "Paddy", operatingHours: "09:00-17:00", slotsPerHour: 4 },
+        { counterId: "c2", crop: "Sugarcane", operatingHours: "09:00-17:00", slotsPerHour: 4 },
+        { counterId: "c3", crop: "Groundnut", operatingHours: "09:00-17:00", slotsPerHour: 4 },
+        { counterId: "c4", crop: "Cotton", operatingHours: "09:00-17:00", slotsPerHour: 4 },
+      ],
+    });
+    res.send("Centres seeded successfully!");
+  } catch (err) {
+    console.error("Seed error:", err);
+    res.status(500).send("Seed failed: " + err.message);
+  }
+});
+
 app.all("/speak-token", async (req, res) => {
   try {
     const { callerNumber } = readParams(req);
