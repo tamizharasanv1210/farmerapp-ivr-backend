@@ -237,12 +237,23 @@ app.all("/prompt-text/slot", async (req, res) => {
   res.type("text/plain").send(prompt || TEXTS[session.lang || "ta"].noSlots);
 });
 
+app.all("/prompt/confirm-intro-ta", async (req, res) => {
+  await speakText(res, "உங்கள் டோக்கன் எண்.", "ta"); // "Your token number is" — static, Tamil audio
+});
+
+app.all("/prompt-text/token-only", async (req, res) => {
+  const { callSid, callerNumber } = readParams(req);
+  const { session } = await getSession(callSid, callerNumber);
+  res.type("text/plain").send(session.tokenNumber || "not found");
+});
+
 app.all("/prompt-text/confirm", async (req, res) => {
   const { callSid, callerNumber } = readParams(req);
   const { session } = await getSession(callSid, callerNumber);
+  // Always English here — Exotel's own TTS can't read Tamil script correctly
   const text = session.tokenNumber
-    ? `${TEXTS[session.lang || "ta"].bookedPrefix} ${session.tokenNumber}`
-    : TEXTS[session.lang || "ta"].invalid;
+    ? `Your token number is ${session.tokenNumber}`
+    : "Booking not found.";
   res.type("text/plain").send(text);
 });
 
