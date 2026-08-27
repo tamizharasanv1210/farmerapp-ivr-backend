@@ -255,7 +255,10 @@ app.all("/save/language", async (req, res) => {
   const { ref } = await getSession(callSid, callerNumber);
   const lang = digits === "2" ? "en" : "ta";
   await ref.set({ step: "role", lang, callerNumber }, { merge: true });
-  res.status(200).json({ status: "success" });
+  if (lang === "en") {
+    return res.status(200).json({ status: "success" }); // Studio: "200 OK" branch -> English role Gather
+  }
+  res.status(400).json({ status: "tamil" }); // Studio: "anything else" branch -> Tamil role Gather
 });
 
 app.all("/save/role", async (req, res) => {
